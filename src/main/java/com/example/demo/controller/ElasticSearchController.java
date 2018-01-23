@@ -24,12 +24,18 @@ import org.elasticsearch.action.update.UpdateResponse;
 import org.elasticsearch.client.RestClient;
 import org.elasticsearch.client.RestHighLevelClient;
 import org.elasticsearch.common.unit.Fuzziness;
+import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.get.GetResult;
+import org.elasticsearch.index.query.MatchQueryBuilder;
 import org.elasticsearch.index.query.QueryBuilder;
 import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.rest.RestStatus;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
+import org.elasticsearch.search.fetch.subphase.highlight.HighlightBuilder;
+import org.elasticsearch.search.sort.FieldSortBuilder;
+import org.elasticsearch.search.sort.ScoreSortBuilder;
+import org.elasticsearch.search.sort.SortOrder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -39,6 +45,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.io.IOException;
 import java.util.Date;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Created by woni on 18/1/21.
@@ -375,9 +382,61 @@ public class ElasticSearchController {
 
         searchRequest.indicesOptions(IndicesOptions.lenientExpandOpen());
 
-        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+        //使用本地的集群
+        searchRequest.preference("_local");
 
-        sourceBuilder.query(QueryBuilders.matchAllQuery());
+        searchRequest.indicesOptions(IndicesOptions.lenientExpandOpen());
+
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+        sourceBuilder.query(QueryBuilders.termQuery("first_name", "fhz"));
+        sourceBuilder.from(0);
+        sourceBuilder.size(5);
+        sourceBuilder.timeout(new TimeValue(60, TimeUnit.SECONDS));
+
+        //建立其他的queryBuild
+        MatchQueryBuilder matchQueryBuilder = new MatchQueryBuilder("first_name", "fhz");
+        //在匹配查询上启用模糊匹配
+        matchQueryBuilder.fuzziness(Fuzziness.AUTO);
+        //在匹配查询中设置前缀长度选项
+        matchQueryBuilder.prefixLength(3);
+        //设置最大扩展选项来控制查询的模糊处理
+        matchQueryBuilder.maxExpansions(10);
+        //将建立的query放入查询的build
+        sourceBuilder.query(matchQueryBuilder);
+
+        //排序
+        //使用默认的文件排序
+        sourceBuilder.sort(new ScoreSortBuilder().order(SortOrder.DESC));
+        //也按_id字段 升序排列
+        sourceBuilder.sort(new FieldSortBuilder("_uid").order(SortOrder.ASC));
+
+
+        //filter,过滤属性文件
+//        sourceBuilder.fetchSource(false);
+
+//        String[] includeFields = new String[] {"title", "user", "innerObject.*"};
+//        String[] excludeFields = new String[] {"_type"};
+//        sourceBuilder.fetchSource(includeFields, excludeFields);
+
+
+        //设置高亮
+
+       // 创建一个新的 HighlightBuilder
+        HighlightBuilder highlightBuilder = new HighlightBuilder();
+        //为该first_name字段 创建一个字段荧光笔
+        HighlightBuilder.Field highlightTitle =  new HighlightBuilder.Field("first_name");
+        //设置字段突出显示类型
+        highlightTitle.highlighterType("unified");
+        //将字段高亮显示添加到高亮构建器
+        highlightBuilder.field(highlightTitle);
+
+        HighlightBuilder.Field highlightUser = new HighlightBuilder.Field("last_name");
+        highlightBuilder.field(highlightUser);
+        sourceBuilder.highlighter(highlightBuilder);
+
+
+
+        searchRequest.source(sourceBuilder);
 
         return null;
 
