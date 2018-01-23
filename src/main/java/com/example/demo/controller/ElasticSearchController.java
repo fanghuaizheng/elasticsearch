@@ -4,8 +4,11 @@ import com.alibaba.fastjson.JSONObject;
 import com.example.demo.entity.Employee;
 import org.apache.http.HttpHost;
 import org.elasticsearch.ElasticsearchException;
+import org.elasticsearch.action.DocWriteRequest;
 import org.elasticsearch.action.DocWriteResponse;
+import org.elasticsearch.action.bulk.BulkItemResponse;
 import org.elasticsearch.action.bulk.BulkRequest;
+import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.delete.DeleteRequest;
 import org.elasticsearch.action.delete.DeleteResponse;
 import org.elasticsearch.action.get.GetRequest;
@@ -295,6 +298,9 @@ public class ElasticSearchController {
     }
 
 
+    /**
+     * 批量操作啊，在一次请求里面包含多个请求操作
+     */
     @RequestMapping("bulkOPeration")
     public void bulkOperation(){
 
@@ -303,7 +309,6 @@ public class ElasticSearchController {
 
         String index = "megacorp";
         String type = "employee";
-        String id = "4";
 
         Employee employee = new Employee();
 
@@ -325,7 +330,32 @@ public class ElasticSearchController {
         request.add(new UpdateRequest(index, type, "2")
                 .doc(XContentType.JSON,"first_name", "Jane_1"));
         request.add(new IndexRequest(index, type, "5")
-                .source(XContentType.JSON,"field", "baz"));
+                .source(JSONObject.toJSONString(employee),XContentType.JSON));
+
+        try {
+            BulkResponse bulkResponse = client.bulk(request);
+
+            for (BulkItemResponse bulkItemResponse : bulkResponse) {
+                DocWriteResponse itemResponse = bulkItemResponse.getResponse();
+
+                if (bulkItemResponse.getOpType() == DocWriteRequest.OpType.INDEX
+                        || bulkItemResponse.getOpType() == DocWriteRequest.OpType.CREATE) {
+                    IndexResponse indexResponse = (IndexResponse) itemResponse;
+                    logger.info("创建成功");
+
+                } else if (bulkItemResponse.getOpType() == DocWriteRequest.OpType.UPDATE) {
+                    UpdateResponse updateResponse = (UpdateResponse) itemResponse;
+                    logger.info("更新成功");
+
+                } else if (bulkItemResponse.getOpType() == DocWriteRequest.OpType.DELETE) {
+                    DeleteResponse deleteResponse = (DeleteResponse) itemResponse;
+                    logger.info("删除成功");
+                }
+            }
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
 
 
     }
