@@ -23,18 +23,21 @@ import org.elasticsearch.action.update.UpdateRequest;
 import org.elasticsearch.action.update.UpdateResponse;
 import org.elasticsearch.client.RestClient;
 import org.elasticsearch.client.RestHighLevelClient;
+import org.elasticsearch.common.text.Text;
 import org.elasticsearch.common.unit.Fuzziness;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.get.GetResult;
-import org.elasticsearch.index.query.MatchQueryBuilder;
-import org.elasticsearch.index.query.QueryBuilder;
-import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.index.query.*;
 import org.elasticsearch.rest.RestStatus;
+import org.elasticsearch.search.SearchHit;
+import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.elasticsearch.search.fetch.subphase.highlight.HighlightBuilder;
+import org.elasticsearch.search.fetch.subphase.highlight.HighlightField;
 import org.elasticsearch.search.sort.FieldSortBuilder;
 import org.elasticsearch.search.sort.ScoreSortBuilder;
+import org.elasticsearch.search.sort.SortBuilders;
 import org.elasticsearch.search.sort.SortOrder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -383,9 +386,9 @@ public class ElasticSearchController {
         searchRequest.indicesOptions(IndicesOptions.lenientExpandOpen());
 
         //使用本地的集群
-        searchRequest.preference("_local");
-
-        searchRequest.indicesOptions(IndicesOptions.lenientExpandOpen());
+//        searchRequest.preference("_local");
+//
+//        searchRequest.indicesOptions(IndicesOptions.lenientExpandOpen());
 
         SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
         sourceBuilder.query(QueryBuilders.termQuery("first_name", "fhz"));
@@ -394,21 +397,21 @@ public class ElasticSearchController {
         sourceBuilder.timeout(new TimeValue(60, TimeUnit.SECONDS));
 
         //建立其他的queryBuild
-        MatchQueryBuilder matchQueryBuilder = new MatchQueryBuilder("first_name", "fhz");
-        //在匹配查询上启用模糊匹配
-        matchQueryBuilder.fuzziness(Fuzziness.AUTO);
-        //在匹配查询中设置前缀长度选项
-        matchQueryBuilder.prefixLength(3);
-        //设置最大扩展选项来控制查询的模糊处理
-        matchQueryBuilder.maxExpansions(10);
-        //将建立的query放入查询的build
-        sourceBuilder.query(matchQueryBuilder);
+//        MatchQueryBuilder matchQueryBuilder = new MatchQueryBuilder("first_name", "fhz");
+//        //在匹配查询上启用模糊匹配
+//        matchQueryBuilder.fuzziness(Fuzziness.AUTO);
+//        //在匹配查询中设置前缀长度选项
+//        matchQueryBuilder.prefixLength(3);
+//        //设置最大扩展选项来控制查询的模糊处理
+//        matchQueryBuilder.maxExpansions(10);
+//        //将建立的query放入查询的build
+//        sourceBuilder.query(matchQueryBuilder);
 
         //排序
         //使用默认的文件排序
         sourceBuilder.sort(new ScoreSortBuilder().order(SortOrder.DESC));
         //也按_id字段 升序排列
-        sourceBuilder.sort(new FieldSortBuilder("_uid").order(SortOrder.ASC));
+        sourceBuilder.sort(new FieldSortBuilder("_id").order(SortOrder.ASC));
 
 
         //filter,过滤属性文件
@@ -438,7 +441,100 @@ public class ElasticSearchController {
 
         searchRequest.source(sourceBuilder);
 
+        try {
+            SearchResponse searchResponse = client.search(searchRequest);
+
+            SearchHits hits = searchResponse.getHits();
+            long totalHits = hits.getTotalHits();
+            float maxScore = hits.getMaxScore();
+            for (SearchHit hit : hits) {
+                // do something with the SearchHit
+                String sourceAsString = hit.getSourceAsString();
+                Map<String, Object> sourceAsMap = hit.getSourceAsMap();
+                //获取高亮的数据
+                Map<String, HighlightField> highlightFields = hit.getHighlightFields();
+                HighlightField highlight = highlightFields.get("first_name");
+                Text[] fragments = highlight.fragments();
+                String fragmentString = fragments[0].string();
+
+            }
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
         return null;
+
+
+    }
+
+    @RequestMapping("testSearchAPIDemo")
+    public Object testSearchAPIDemo(){
+        RestHighLevelClient client = new RestHighLevelClient(RestClient.builder(
+                new HttpHost("localhost", 9200, "http")));
+
+        SearchSourceBuilder searchSourceBuilder = new SearchSourceBuilder();
+
+        searchSourceBuilder.from(0);
+        searchSourceBuilder.size(5);
+        searchSourceBuilder.timeout(new TimeValue(60,TimeUnit.SECONDS));
+        MatchQueryBuilder matchQueryBuilder = QueryBuilders.matchQuery("last_name","Sith");
+        matchQueryBuilder.fuzziness(Fuzziness.AUTO);
+
+//        matchQueryBuilder.operator(Operator.OR);
+
+        // 查询在时间区间范围内的结果
+//        RangeQueryBuilder matchbuilder2 = QueryBuilders.rangeQuery("log_time");
+//        if(!"".equals(startDate)){
+//            matchbuilder2.gte(startDate);
+//        }
+//        if(!"".equals(endDate)){
+//            matchbuilder2.lte(endDate);
+//        }
+
+        //我猜这个才是关键，将查询放入boolQuery里面
+        BoolQueryBuilder boolQuery = QueryBuilders.boolQuery();
+
+        boolQuery.must(matchQueryBuilder);
+
+        FieldSortBuilder sort = SortBuilders.fieldSort("_id");
+        sort.order(SortOrder.DESC);
+
+        searchSourceBuilder.sort(sort);
+
+        searchSourceBuilder.query(boolQuery);
+
+        SearchRequest searchRequest = new SearchRequest("megacorp");
+        searchRequest.types("employee");
+        searchRequest.source(searchSourceBuilder);
+        SearchResponse response = null;
+        try {
+            response = client.search(searchRequest);
+
+            SearchHits hits = response.getHits();
+            long totalHits = hits.getTotalHits();
+            if (totalHits<=0){
+                logger.info("没有查询到数据");
+            }else {
+                int i = 1;
+
+                for (SearchHit hit: hits
+                        ) {
+                    String sourceAsString = hit.getSourceAsString();
+                    logger.info("查询的第"+(i++)+"结果：\t"+sourceAsString);
+                }
+
+            }
+
+
+//            System.out.println(response);
+            client.close();
+        } catch (IOException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
+
+        return response;
 
 
     }
