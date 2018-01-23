@@ -17,6 +17,7 @@ import org.elasticsearch.action.index.IndexRequest;
 import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.action.search.SearchRequest;
 import org.elasticsearch.action.search.SearchResponse;
+import org.elasticsearch.action.support.IndicesOptions;
 import org.elasticsearch.action.support.replication.ReplicationResponse;
 import org.elasticsearch.action.update.UpdateRequest;
 import org.elasticsearch.action.update.UpdateResponse;
@@ -356,8 +357,32 @@ public class ElasticSearchController {
         } catch (IOException e) {
             e.printStackTrace();
         }
+    }
+
+
+    @RequestMapping("testSearchAPI")
+    public Object testSearchAPI(){
+
+
+        RestHighLevelClient client = new RestHighLevelClient(RestClient.builder(
+                new HttpHost("localhost", 9200, "http")));
+
+
+        SearchRequest searchRequest = new SearchRequest("megacorp");
+        searchRequest.types("employee");
+
+        searchRequest.routing("routing");
+
+        searchRequest.indicesOptions(IndicesOptions.lenientExpandOpen());
+
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+
+        sourceBuilder.query(QueryBuilders.matchAllQuery());
+
+        return null;
 
 
     }
+
 
 }
