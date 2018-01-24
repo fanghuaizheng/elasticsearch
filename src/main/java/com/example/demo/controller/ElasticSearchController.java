@@ -1,6 +1,8 @@
 package com.example.demo.controller;
 
 import com.alibaba.fastjson.JSONObject;
+import com.example.demo.config.MyConfig;
+import com.example.demo.dto.EmployeeDto;
 import com.example.demo.entity.Employee;
 import org.apache.http.HttpHost;
 import org.elasticsearch.ElasticsearchException;
@@ -28,7 +30,10 @@ import org.elasticsearch.common.unit.Fuzziness;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.get.GetResult;
-import org.elasticsearch.index.query.*;
+import org.elasticsearch.index.query.BoolQueryBuilder;
+import org.elasticsearch.index.query.MatchQueryBuilder;
+import org.elasticsearch.index.query.QueryBuilder;
+import org.elasticsearch.index.query.QueryBuilders;
 import org.elasticsearch.rest.RestStatus;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
@@ -41,12 +46,15 @@ import org.elasticsearch.search.sort.SortBuilders;
 import org.elasticsearch.search.sort.SortOrder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -58,6 +66,10 @@ import java.util.concurrent.TimeUnit;
 public class ElasticSearchController {
 
     private static Logger logger = LoggerFactory.getLogger(ElasticSearchController.class);
+
+
+    @Autowired
+    MyConfig config;
 
     @RequestMapping("getBySearch")
     public Object getResult(@RequestParam(value = "key",required = false,defaultValue = "11")String key){
@@ -535,6 +547,88 @@ public class ElasticSearchController {
         }
 
         return response;
+
+
+    }
+
+    /**
+     * 通过设置的属性名称跟值，来获取数据
+     * @param key 属性名称
+     * @param value 属性值
+     * @return
+     */
+    @RequestMapping("mySearchAPI")
+    public Object mySearchAPI(String key,String value){
+
+        RestHighLevelClient client = new RestHighLevelClient(
+                RestClient.builder(new HttpHost("127.0.0.1", 9200, "http")));
+
+        MatchQueryBuilder matchQuery = QueryBuilders.matchQuery(key, value);
+        matchQuery.fuzziness(Fuzziness.AUTO);
+
+        BoolQueryBuilder boolQuery = QueryBuilders.boolQuery();
+
+        boolQuery.must(matchQuery);
+
+        HighlightBuilder highlightBuilder = new HighlightBuilder();
+
+        HighlightBuilder.Field field = new HighlightBuilder.Field(key);
+
+        highlightBuilder.field(field);
+
+        SearchSourceBuilder sourceBuilder = new SearchSourceBuilder();
+
+        sourceBuilder.highlighter(highlightBuilder);
+
+        sourceBuilder.query(boolQuery);
+
+        SearchRequest searchRequest = new SearchRequest(config.index);
+
+        searchRequest.types(config.type);
+
+        searchRequest.source(sourceBuilder);
+
+        SearchResponse response = null;
+
+        List<EmployeeDto> employeeList = new ArrayList<>();
+
+        try {
+
+            response = client.search(searchRequest);
+
+            SearchHits hits = response.getHits();
+
+            long totalHits = hits.getTotalHits();
+
+            if (totalHits<=0){
+                logger.info("没有查询到数据");
+            }else {
+                for (int i = 0; i < totalHits; i++) {
+                    SearchHit searchHit = hits.getAt(i);
+
+                    String sourceAsString = searchHit.getSourceAsString();
+
+                    EmployeeDto dto = JSONObject.parseObject(sourceAsString, EmployeeDto.class);
+
+                    Map<String, HighlightField> highlightFields = searchHit.getHighlightFields();
+                    HighlightField highlightField = highlightFields.get(key);
+                    Text[] texts = highlightField.fragments();
+                    String string = texts[0].string();
+                    dto.setHighLightValue(new String[]{string});
+                    employeeList.add(dto);
+                }
+            }
+
+
+        }catch (Exception e){
+            e.printStackTrace();
+            logger.info("查询出现错误");
+        }finally {
+            JSONObject object = new JSONObject();
+            object.put("data",employeeList);
+            object.put("success",true);
+            return object;
+        }
 
 
     }
