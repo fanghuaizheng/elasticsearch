@@ -10,13 +10,13 @@ import org.springframework.context.annotation.Configuration;
 public class MyConfig {
 
     @Value("${elasticsearch.cluster.name}")
-    private String clusterName;
+    public String clusterName;
 
     @Value("${elasticsearch.host}")
-    private String host;
+    public String host;
 
     @Value("${elasticsearch.port:9200}")
-    private Integer port;
+    public Integer port;
 
     @Value("${elasticsearch.search.test.index}")
     public String index;

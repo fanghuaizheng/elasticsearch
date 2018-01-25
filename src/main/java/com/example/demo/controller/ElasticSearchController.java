@@ -1,9 +1,12 @@
 package com.example.demo.controller;
 
 import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.JSONPObject;
 import com.example.demo.config.MyConfig;
 import com.example.demo.dto.EmployeeDto;
 import com.example.demo.entity.Employee;
+import com.example.demo.entity.UserEntity;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.http.HttpHost;
 import org.elasticsearch.ElasticsearchException;
 import org.elasticsearch.action.DocWriteRequest;
@@ -30,10 +33,7 @@ import org.elasticsearch.common.unit.Fuzziness;
 import org.elasticsearch.common.unit.TimeValue;
 import org.elasticsearch.common.xcontent.XContentType;
 import org.elasticsearch.index.get.GetResult;
-import org.elasticsearch.index.query.BoolQueryBuilder;
-import org.elasticsearch.index.query.MatchQueryBuilder;
-import org.elasticsearch.index.query.QueryBuilder;
-import org.elasticsearch.index.query.QueryBuilders;
+import org.elasticsearch.index.query.*;
 import org.elasticsearch.rest.RestStatus;
 import org.elasticsearch.search.SearchHit;
 import org.elasticsearch.search.SearchHits;
@@ -228,6 +228,74 @@ public class ElasticSearchController {
 
 
     }
+
+    @RequestMapping("addUserIndex")
+    public Object addUserIndex(){
+        RestHighLevelClient client = new RestHighLevelClient(RestClient.builder(new HttpHost(config.host, config.port, "http")));
+
+        String[] names = new String[]{"方怀正","张会盈","汪光银","大石头","宋老师"};
+        Integer[] ages = new Integer[]{18,20,25,30,40};
+        String[] descripts = new String[]{"一个贪玩的人,不知道世界的尽头在哪里",
+                "人称小辣椒，面冷心热，人非常好","搞笑段子手啊，土豪哥","测试大佬，不能惹，测试给你分bug，就问你怕不怕","叫兽级别人任务，厉害了，买车了，下那个下雪天"};
+        BulkRequest bulkRequest = new BulkRequest();
+        for (int i = 0; i < names.length; i++) {
+
+            UserEntity entity = new UserEntity();
+            entity.setName(names[i]);
+            entity.setAge(ages[i]);
+            entity.setBirthDate(new Date());
+            entity.setDescript(descripts[i]);
+            String jsonString = JSONObject.toJSONString(entity);
+            IndexRequest indexRequest = new IndexRequest(config.index, config.type, (i + 1) + "");
+            indexRequest.source(jsonString,XContentType.JSON);
+            bulkRequest.add(indexRequest);
+        }
+        int i = 0;
+
+        try {
+            BulkResponse bulkResponse = client.bulk(bulkRequest);
+
+            for (BulkItemResponse itemResponse:bulkResponse
+                 ) {
+
+                i++;
+                DocWriteResponse response = itemResponse.getResponse();
+
+                if (itemResponse.getOpType() == DocWriteRequest.OpType.INDEX
+                        || itemResponse.getOpType() == DocWriteRequest.OpType.CREATE) {
+                    IndexResponse indexResponse = (IndexResponse) response;
+                    logger.info("创建成功");
+
+                } else if (itemResponse.getOpType() == DocWriteRequest.OpType.UPDATE) {
+                    UpdateResponse updateResponse = (UpdateResponse) response;
+                    logger.info("更新成功");
+
+                } else if (itemResponse.getOpType() == DocWriteRequest.OpType.DELETE) {
+                    DeleteResponse deleteResponse = (DeleteResponse) response;
+                    logger.info("删除成功");
+                }
+
+
+            }
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }finally {
+            JSONObject jsonObject = new JSONObject();
+            if (i>0){
+                jsonObject.put("success",true);
+                jsonObject.put("data",i);
+            }else {
+                jsonObject.put("success",false);
+                jsonObject.put("data",i);
+            }
+
+            return jsonObject;
+
+        }
+
+    }
+
 
     @RequestMapping("deleteById")
     public void deleteById(@RequestParam(value = "id",required = false,defaultValue = "1")String id){
@@ -558,7 +626,9 @@ public class ElasticSearchController {
      * @return
      */
     @RequestMapping("mySearchAPI")
-    public Object mySearchAPI(String key,String value){
+    public Object mySearchAPI(String key,String value,
+                              @RequestParam(value = "sort",required = false,defaultValue = "")String sort,
+                              @RequestParam(value = "age",required = false,defaultValue = "0") Integer age){
 
         RestHighLevelClient client = new RestHighLevelClient(
                 RestClient.builder(new HttpHost("127.0.0.1", 9200, "http")));
@@ -566,10 +636,19 @@ public class ElasticSearchController {
         MatchQueryBuilder matchQuery = QueryBuilders.matchQuery(key, value);
         matchQuery.fuzziness(Fuzziness.AUTO);
 
+        RangeQueryBuilder rangeQuery = null;
+        //加入对某个属性的筛选
+        if (age!=null&&age>0){
+            rangeQuery  = QueryBuilders.rangeQuery("age");
+            rangeQuery.gte(age);
+        }
         BoolQueryBuilder boolQuery = QueryBuilders.boolQuery();
 
         boolQuery.must(matchQuery);
 
+        if (rangeQuery!=null){
+            boolQuery.must(rangeQuery);
+        }
         HighlightBuilder highlightBuilder = new HighlightBuilder();
 
         HighlightBuilder.Field field = new HighlightBuilder.Field(key);
@@ -581,6 +660,12 @@ public class ElasticSearchController {
         sourceBuilder.highlighter(highlightBuilder);
 
         sourceBuilder.query(boolQuery);
+
+        //加入排序规则
+        if (StringUtils.isNotBlank(sort)){
+            sourceBuilder.sort(new FieldSortBuilder(sort).order(SortOrder.ASC));
+        }
+
 
         SearchRequest searchRequest = new SearchRequest(config.index);
 
